@@ -22,13 +22,12 @@ import (
 	"encoding/json"
 	"github.com/apache/servicecomb-kie/pkg/stringutil"
 	"github.com/apache/servicecomb-kie/server/cache"
-	"regexp"
-	"strings"
-	"sync"
-
 	kieSync "github.com/go-chassis/cari/sync"
 	"github.com/go-chassis/openlog"
 	"github.com/little-cui/etcdadpt"
+	"regexp"
+	"strings"
+	"sync"
 
 	"github.com/apache/servicecomb-kie/pkg/model"
 	"github.com/apache/servicecomb-kie/pkg/util"
@@ -562,10 +561,13 @@ func (s *Dao) listData(ctx context.Context, project, domain string, options ...d
 func cacheSearch(ctx context.Context, project string, domain string, kvIDs map[string]struct{}, opts datasource.FindOptions, regex *regexp.Regexp) (*model.KVResponse, error) {
 	openlog.Debug("using cache to search kv")
 	result := &model.KVResponse{}
+	cnt := -1
 	wg := sync.WaitGroup{}
+	tpData := make([]*model.KVDoc, len(kvIDs))
 	for kvID := range kvIDs {
 		wg.Add(1)
-		go func(kvID string) {
+		cnt++
+		go func(kvID string, cnt int) {
 			defer wg.Done()
 			kv, err := etcdadpt.Get(ctx, key.KV(domain, project, kvID))
 			if err != nil {
@@ -587,14 +589,20 @@ func cacheSearch(ctx context.Context, project string, domain string, kvIDs map[s
 			}
 
 			datasource.ClearPart(&doc)
-			result.Data = append(result.Data, &doc)
-			result.Total++
+			tpData[cnt] = &doc
 			if IsUniqueFind(opts) {
 				return
 			}
-		}(kvID)
+		}(kvID, cnt)
 	}
 	wg.Wait()
+	for i := range tpData {
+		if tpData[i] == nil {
+			continue
+		}
+		result.Data = append(result.Data, tpData[i])
+	}
+	result.Total = len(result.Data)
 	return result, nil
 }
 
