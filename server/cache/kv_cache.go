@@ -11,11 +11,12 @@ import (
 	"github.com/little-cui/etcdadpt"
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	"strings"
+	"sync"
 	"time"
 )
 
 func Init() {
-	Kc = NewKvCache(PrefixKvs, 0, labelsToIDsMap{})
+	Kc = NewKvCache(PrefixKvs, 0, &sync.Map{})
 	go Kc.refresh(context.Background())
 }
 
@@ -25,16 +26,14 @@ const (
 	PrefixKvs = "kvs"
 )
 
-type labelsToIDsMap map[string]map[string]struct{}
-
 type KvCache struct {
 	Client   etcdadpt.Client
 	Prefix   string
 	Revision int64
-	Cache    labelsToIDsMap
+	Cache    *sync.Map
 }
 
-func NewKvCache(prefix string, rev int64, cache labelsToIDsMap) *KvCache {
+func NewKvCache(prefix string, rev int64, cache *sync.Map) *KvCache {
 	return &KvCache{
 		Client:   etcdadpt.Instance(),
 		Prefix:   prefix,
@@ -115,10 +114,12 @@ func (kc *KvCache) cachePut(rsp *etcdadpt.Response) {
 		if err != nil {
 			continue
 		}
-		if _, ok := kc.Cache[inputKey]; !ok {
-			kc.Cache[inputKey] = map[string]struct{}{}
+		if _, ok := kc.Cache.Load(inputKey); !ok {
+			kc.Cache.Store(inputKey, map[string]struct{}{})
 		}
-		kc.Cache[inputKey][kvDoc.ID] = struct{}{}
+		val, _ := kc.Cache.Load(inputKey)
+		m, _ := val.(map[string]struct{})
+		m[kvDoc.ID] = struct{}{}
 	}
 }
 
@@ -128,10 +129,12 @@ func (kc *KvCache) cacheDelete(rsp *etcdadpt.Response) {
 		if err != nil {
 			continue
 		}
-		if _, ok := kc.Cache[inputKey]; !ok {
+		if _, ok := kc.Cache.Load(inputKey); !ok {
 			continue
 		}
-		delete(kc.Cache[inputKey], kvDoc.ID)
+		val, _ := kc.Cache.Load(inputKey)
+		m, _ := val.(map[string]struct{})
+		delete(m, kvDoc.ID)
 	}
 }
 

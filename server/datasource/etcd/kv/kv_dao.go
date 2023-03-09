@@ -534,8 +534,9 @@ func (s *Dao) listData(ctx context.Context, project, domain string, options ...d
 		labelFormat,
 	}, "/")
 	if cache.Kc != nil {
-		kvIDs, ok := cache.Kc.Cache[inputKey]
+		val, ok := cache.Kc.Cache.Load(inputKey)
 		if ok && opts.ExactLabels {
+			kvIDs, _ := val.(map[string]struct{})
 			result, err := cacheSearch(ctx, project, domain, kvIDs, opts, regex)
 			if err != nil {
 				openlog.Error("list kv failed: " + err.Error())
@@ -545,7 +546,7 @@ func (s *Dao) listData(ctx context.Context, project, domain string, options ...d
 		}
 
 		if !ok {
-			cache.Kc.Cache[inputKey] = map[string]struct{}{}
+			cache.Kc.Cache.Store(inputKey, map[string]struct{}{})
 		}
 	}
 
